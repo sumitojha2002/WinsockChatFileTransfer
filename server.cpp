@@ -3,6 +3,7 @@
 #include <iostream>
 #include <windows.h>
 #include <vector>
+#include <string>
 #pragma comment(lib, "Ws2_32.lib")
 
 using namespace std;
@@ -20,13 +21,13 @@ DWORD WINAPI ClientHandler(LPVOID lpParam){
     SOCKET client = cl->sock;
     char buf[1025];
     int bytes;
+    
     while(true){
-         bytes = recv(client,buf,1024,0);
+        bytes = recv(client, buf, 1024, 0);
 
         if (bytes <= 0) {
             cout << cl->name << " disconnected.\n";
             
-            // Broadcast disconnect to all OTHER clients
             char bufdis[1024];
             sprintf(bufdis, "%s has disconnected.", cl->name);
  
@@ -41,32 +42,83 @@ DWORD WINAPI ClientHandler(LPVOID lpParam){
             }
             
             LeaveCriticalSection(&cs);  
-            break;
+            break;  
         }
+        
         buf[bytes] = '\0';
 
-        cout <<  "["<<cl->name<<"]: " << buf << endl;
- 
-        // Echo back
-        EnterCriticalSection(&cs);
-        for(int i= 0; i< clients.size();i++){
-            Client*other =clients[i];
-            if(other->sock != cl->sock){
-                send(other->sock,cl->name,strlen(cl->name),0);
-                send(other->sock,buf,bytes,0);
-            }
-        }
-        LeaveCriticalSection(&cs);
-    }
+        if(buf[0] == '@'){
+            // Private message handling
+            string str = buf;
+            str.erase(0, 1);
+            int pos = str.find(" ");
+            
+            if(pos == string::npos || pos == 0){
+                send(cl->sock, "SYSTEM", 6, 0);
+                send(cl->sock, "Invalid format. Use: @username message", 38, 0);
+            } else {
+                string name = str.substr(0, pos);
+                string message = str.substr(pos + 1);
+                
+                bool found = false;
 
+                EnterCriticalSection(&cs);
+                for(int i = 0; i < clients.size(); i++){
+                    if(strcmp(clients[i]->name, name.c_str()) == 0){
+                        if(clients[i]->sock == cl->sock){
+                            send(cl->sock, "SYSTEM", 6, 0);
+                            send(cl->sock, "Cannot message yourself.", 24, 0);
+                        } else {
+                            char toRecipient[1024];
+                            sprintf(toRecipient, "%s -> You", cl->name);
+                            send(clients[i]->sock, toRecipient, strlen(toRecipient), 0);
+                            send(clients[i]->sock, message.c_str(), message.length(), 0);
+                        
+                            char toSender[1024];
+                            sprintf(toSender, "You -> %s", clients[i]->name);
+                            send(cl->sock, toSender, strlen(toSender), 0);
+                            send(cl->sock, message.c_str(), message.length(), 0);
+
+                            cout << "[" << cl->name << " -> " << clients[i]->name << "]: " << message << endl;
+                        }
+                        found = true;
+                        break;
+                    }
+                }
+                LeaveCriticalSection(&cs);
+                
+                if(!found){
+                    send(cl->sock, "SYSTEM", 6, 0);
+                    send(cl->sock, "User not found.", 15, 0);
+                }
+            }
+        } else {
+            // Public message handling
+            cout << "[" << cl->name << "]: " << buf << endl;
+            
+            EnterCriticalSection(&cs);
+            for(int i = 0; i < clients.size(); i++){
+                Client* other = clients[i];
+                if(other->sock != cl->sock){
+                    send(other->sock, cl->name, strlen(cl->name), 0);
+                    send(other->sock, buf, bytes, 0);
+                }
+            }
+            LeaveCriticalSection(&cs);
+        }
+        
+    }  
+    
+    
     EnterCriticalSection(&cs);
-    for(int i= 0;i< clients.size();i++){
+    for(int i = 0; i < clients.size(); i++){
         if(clients[i]->sock == cl->sock){
-            clients.erase(clients.begin()+i);
+            clients.erase(clients.begin() + i);
             break;
         }
     }
     LeaveCriticalSection(&cs);
+    
     closesocket(client);
     delete cl;
     return 0;

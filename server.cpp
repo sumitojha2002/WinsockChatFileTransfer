@@ -23,11 +23,26 @@ DWORD WINAPI ClientHandler(LPVOID lpParam){
     while(true){
          bytes = recv(client,buf,1024,0);
 
-         if (bytes <= 0) {
+        if (bytes <= 0) {
             cout << cl->name << " disconnected.\n";
+            
+            // Broadcast disconnect to all OTHER clients
+            char bufdis[1024];
+            sprintf(bufdis, "%s has disconnected.", cl->name);
+ 
+            EnterCriticalSection(&cs);  
+            
+            for(int i = 0; i < clients.size(); i++){
+                Client* other = clients[i];
+                if(other->sock != cl->sock){  
+                    send(other->sock, "SYSTEM", 6, 0);
+                    send(other->sock, bufdis, strlen(bufdis), 0);
+                }
+            }
+            
+            LeaveCriticalSection(&cs);  
             break;
         }
-
         buf[bytes] = '\0';
 
         cout <<  "["<<cl->name<<"]: " << buf << endl;
@@ -64,7 +79,7 @@ int main(){
     int clientSize = sizeof(clientAddr);
    
     char buffName[1025];
-    
+
     InitializeCriticalSection(&cs);
     // Start WinSock
     if(WSAStartup(MAKEWORD(2,2),&wsa)!=0){
@@ -114,14 +129,31 @@ int main(){
         int namebytes = recv(client,buffName,1024,0);
         buffName[namebytes] = '\0';
         cout << buffName <<" joined.\n";
-
-         Client* cl = new Client;
-         cl->sock = client;
+        
+        
+        
+        Client* cl = new Client;
+        cl->sock = client;
         strcpy_s(cl->name, buffName);
+
+
 
         EnterCriticalSection(&cs);
         clients.push_back(cl);
         LeaveCriticalSection(&cs);
+
+        // Broadcast join notification
+        char buffConName[1024];  
+        sprintf(buffConName, "%s has connected.", buffName);
+
+        EnterCriticalSection(&cs);  
+
+        for(int i = 0; i < clients.size(); i++){
+            send(clients[i]->sock, "SYSTEM", 6, 0);
+            send(clients[i]->sock, buffConName, strlen(buffConName), 0);
+        }
+
+        LeaveCriticalSection(&cs);  
 
          HANDLE hThread = CreateThread(
             NULL,

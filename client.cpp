@@ -20,7 +20,6 @@ DWORD WINAPI RecvHandler(LPVOID lpParam){
      char recvBuffer[1025];
 
     while(client->isRunning){
-  
         
         int recvNameSize = recv(client->sock,recvName,1024,0);
         if(recvNameSize <= 0){
@@ -38,8 +37,13 @@ DWORD WINAPI RecvHandler(LPVOID lpParam){
         }
         recvBuffer[recvBufferSize] = '\0';
         
-        cout << "\r";  
-        cout << "[" << recvName << "]: " << recvBuffer << endl;
+        if(strcmp(recvName, "SYSTEM") == 0){
+            cout << "\r";  
+            cout << ">>> " << recvBuffer << endl;  
+        } else {
+            cout << "\r";  
+            cout << "[" << recvName << "]: " << recvBuffer << endl;  
+        }
         cout << client->name << ": ";  
         cout.flush();
        
